@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>将棋RPG ミニクエスト</title>
+<style>
+:root{--bg:#fff7e8;--ink:#2b1b12;--card:#fff;--accent:#d97706;--ok:#16a34a;--bad:#dc2626;--line:#d6b98a}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;background:linear-gradient(#fff7e8,#fdebd0);color:var(--ink)}
+.app{min-height:100dvh;padding:env(safe-area-inset-top) 12px env(safe-area-inset-bottom);display:grid;grid-template-rows:auto 1fr auto;gap:10px;max-width:1100px;margin:auto}
+header{display:flex;justify-content:space-between;gap:8px;align-items:center}.title{font-weight:900;font-size:clamp(20px,4vw,34px)}.stats{font-size:14px;text-align:right}
+.main{display:grid;grid-template-columns:1fr;gap:10px}@media (orientation:landscape) and (min-width:760px){.main{grid-template-columns:1fr 360px;align-items:start}}
+.board{background:#e8b766;border:4px solid #6b3f18;border-radius:14px;padding:6px;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;aspect-ratio:1/1;max-height:72dvh;margin:auto;width:min(100%,72dvh)}
+.cell{background:#f6cf83;border:1px solid #8a5a22;border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;user-select:none;touch-action:manipulation;font-weight:900;font-size:clamp(22px,7vw,46px)}
+.cell.sel{outline:4px solid #2563eb}.cell.target{background:#fde68a}.piece{width:86%;height:86%;border-radius:10px;background:#fff7d6;border:2px solid #6b3f18;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 #7c4a1d}.enemy .piece{transform:rotate(180deg);background:#fee2e2}
+.panel{background:rgba(255,255,255,.9);border:2px solid var(--line);border-radius:16px;padding:12px;box-shadow:0 6px 18px #0001}.panel h2{margin:0 0 8px;font-size:20px}.msg{min-height:76px;font-size:16px;line-height:1.55}
+button{font:inherit;font-weight:800;border:0;border-radius:12px;padding:12px 14px;background:var(--accent);color:#fff;touch-action:manipulation}button.secondary{background:#6b7280}button.good{background:var(--ok)}.row{display:flex;gap:8px;flex-wrap:wrap}.quest{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px;margin:8px 0}.small{font-size:13px;color:#6b4d36}.choice{display:block;width:100%;margin:8px 0;background:#fff;border:2px solid #f59e0b;color:#2b1b12;text-align:left}.choice.correct{background:#dcfce7;border-color:#16a34a}.choice.wrong{background:#fee2e2;border-color:#dc2626}
+footer{font-size:12px;text-align:center;color:#6b4d36}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="title">将棋RPG ミニクエスト</div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<div class="main">
+  <div class="board" id="board" aria-label="将棋盤 5x5"></div>
+  <section class="panel">
+    <h2 id="chapter">第1章：歩の森</h2>
+    <div class="quest" id="quest"></div>
+    <div class="msg" id="msg"></div>
+    <div id="choices"></div>
+    <div class="row">
+      <button id="nextBtn">次の問題</button>
+      <button class="secondary" id="resetBtn">最初から</button>
+    </div>
+    <p class="small">遊び方：問題を読んで、駒をタップ→移動先をタップ。iPad横画面では盤と説明が並びます。進行は端末に自動保存されます。</p>
+  </section>
+</div>
+<footer>GPT試作版 / 既存キャラクター不使用 / ローカル保存</footer>
+</div>
+
+<script>
+const K={FU:"歩",KIN:"金",OU:"王",HI:"飛",KA:"角"};
+const puzzles=[
+ {title:"歩の一歩",text:"味方の歩を1マス前に進めよう。",pieces:[["me",K.FU,2,3],["enemy",K.OU,2,0]],answer:[[2,3],[2,2]],tip:"歩は前に1マスだけ進めるよ。"},
+ {title:"金の守り",text:"金を王様の前に動かして守ろう。",pieces:[["me",K.KIN,1,3],["me",K.OU,2,4],["enemy",K.HI,2,1]],answer:[[1,3],[2,3]],tip:"金は前・横・後ろ・斜め前に動ける。斜め後ろは苦手。"},
+ {title:"飛車のまっすぐ攻撃",text:"飛車で敵の王様をねらおう。",pieces:[["me",K.HI,0,4],["enemy",K.OU,0,1],["me",K.OU,4,4]],answer:[[0,4],[0,1]],tip:"飛車は縦横にどこまでも進めるよ。"},
+ {title:"角のななめ攻撃",text:"角で敵の王様をねらおう。",pieces:[["me",K.KA,0,4],["enemy",K.OU,3,1],["me",K.OU,4,4]],answer:[[0,4],[3,1]],tip:"角は斜めにどこまでも進めるよ。"},
+ {title:"次の一手",text:"いちばん強い一手を選ぼう。",choices:["歩を進める","飛車で王を取る","王を下げる"],correct:1,pieces:[["me",K.HI,2,4],["enemy",K.OU,2,1],["me",K.OU,4,4]],tip:"相手の王を直接ねらえる手があるか探そう。"}
+];
+let state=JSON.parse(localStorage.getItem("shogiRpgMini")||'{"lv":1,"xp":0,"p":0}');
+let selected=null,locked=false;
+const board=document.getElementById("board"),msg=document.getElementById("msg"),quest=document.getElementById("quest"),choices=document.getElementById("choices"),stats=document.getElementById("stats");
+function save(){localStorage.setItem("shogiRpgMini",JSON.stringify(state))}
+function same(a,b){return a&&b&&a[0]===b[0]&&a[1]===b[1]}
+function cur(){return puzzles[state.p%puzzles.length]}
+function render(){
+ const q=cur(); selected=null; locked=false; choices.innerHTML="";
+ stats.innerHTML=`Lv.${state.lv}<br>経験値 ${state.xp}`;
+ quest.innerHTML=`<b>${q.title}</b><br>${q.text}<br><span class="small">ヒント：${q.tip}</span>`;
+ msg.textContent="駒を選んでね。";
+ board.innerHTML="";
+ for(let y=0;y<5;y++)for(let x=0;x<5;x++){
+   const c=document.createElement("button"); c.className="cell"; c.setAttribute("aria-label",`${x+1}筋${y+1}段`);
+   const pc=(q.pieces||[]).find(p=>p[2]===x&&p[3]===y);
+   if(pc){c.classList.add(pc[0]==="enemy"?"enemy":"me"); c.innerHTML=`<span class="piece">${pc[1]}</span>`}
+   c.onclick=()=>tap(x,y,c); board.appendChild(c);
+ }
+ if(q.choices){
+   msg.textContent="選択肢から答えてね。";
+   q.choices.forEach((t,i)=>{const b=document.createElement("button");b.className="choice";b.textContent=t;b.onclick=()=>answerChoice(i,b);choices.appendChild(b)})
+ }
+}
+function tap(x,y,el){
+ const q=cur(); if(locked||q.choices)return;
+ const cells=[...board.children];
+ cells.forEach(c=>c.classList.remove("sel","target"));
+ if(!selected){
+   const pc=q.pieces.find(p=>p[0]==="me"&&p[2]===x&&p[3]===y);
+   if(!pc){msg.textContent="味方の駒を選んでね。";return}
+   selected=[x,y]; el.classList.add("sel"); msg.textContent="移動先をタップしてね。"; return;
+ }
+ const ok=same(selected,q.answer[0])&&same([x,y],q.answer[1]);
+ if(ok)clear("正解！モンスターをやっつけた！");
+ else {msg.textContent="惜しい！もう一度。"+q.tip; selected=null;}
+}
+function answerChoice(i,b){
+ if(locked)return; locked=true;
+ const q=cur(); b.classList.add(i===q.correct?"correct":"wrong");
+ if(i===q.correct) clear("正解！読みの力が上がった！");
+ else {msg.textContent="惜しい！正解は「"+q.choices[q.correct]+"」。"+q.tip; setTimeout(()=>{locked=false},600)}
+}
+function clear(text){
+ locked=true; state.xp+=20; if(state.xp>=100){state.xp-=100;state.lv++}
+ msg.textContent=text+" 経験値+20";
+ save();
+}
+document.getElementById("nextBtn").onclick=()=>{state.p++;save();render()}
+document.getElementById("resetBtn").onclick=()=>{if(confirm("データを消して最初から始めますか？")){state={lv:1,xp:0,p:0};save();render()}}
+render();
+</script>
+</body>
+</html>
